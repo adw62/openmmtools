@@ -653,6 +653,9 @@ class AbsoluteAlchemicalFactory(object):
 
         """
         if alchemical_regions_interactions != frozenset():
+            # If multiple alchemical regions seeing each other is implemented then a check should also be made in
+            # the function _alchemically_modify_NonbondedForce() that the two regions have the same values for
+            # the softcore parameters and the annihilate/decouple region booleans.
             raise NotImplementedError('Interactions between alchemical regions is untested')
 
         logger.debug(f'Dictionary of interacting alchemical regions: {alchemical_regions_interactions}')
@@ -1347,7 +1350,7 @@ class AbsoluteAlchemicalFactory(object):
 
         return alchemical_forces
 
-    def _get_sterics_energy_expressions(self, lambda_variable_suffixes):
+    def _get_sterics_energy_expressions(self, lambda_variable_suffixes, softcore):
         """Return the energy expressions for sterics.
 
         Parameters
@@ -1358,6 +1361,8 @@ class AbsoluteAlchemicalFactory(object):
             no multiple alchemical regions) just set lambda_variable_suffixes[0] = ''.
             If the list has more than one element, the energy is controlled by
             the multiplication of lambda_sterics_suffix1 * lambda_sterics_suffix2.
+        softcore : dict
+            A dictionary which contains softcore parameters as floats
         """
 
         # Sterics mixing rules.
@@ -1375,15 +1380,15 @@ class AbsoluteAlchemicalFactory(object):
 
         # Soft-core Lennard-Jones.
         exceptions_sterics_energy_expression = ('U_sterics;'
-                                                'U_sterics = (({0})^softcore_a)*4*epsilon*x*(x-1.0);'
+                                                'U_sterics = (({0})^{1})*4*epsilon*x*(x-1.0);'
                                                 'x = (sigma/reff_sterics)^6;'
                                                 # Effective softcore distance for sterics.
-                                                'reff_sterics = sigma*((softcore_alpha*(1.0-({0}))^softcore_b + (r/sigma)^softcore_c))^(1/softcore_c);')\
-                                                .format(lambda_variable_name)
+                                                'reff_sterics = sigma*(({2}*(1.0-({0}))^{3} + (r/sigma)^{4}))^(1/{4});')\
+                                                .format(lambda_variable_name, softcore['a'], softcore['alpha'], softcore['b'], softcore['c'])
         # Define energy expression for electrostatics.
         return sterics_mixing_rules, exceptions_sterics_energy_expression
 
-    def _get_electrostatics_energy_expressions(self, reference_force, lambda_variable_suffixes):
+    def _get_electrostatics_energy_expressions(self, reference_force, lambda_variable_suffixes, softcore):
         """Return the energy expressions for electrostatics.
 
         This private function assumes self._alchemical_pme_treatment != 'exact'
@@ -1399,6 +1404,8 @@ class AbsoluteAlchemicalFactory(object):
             no multiple alchemical regions) just set lambda_variable_suffixes[0] = ''.
             If the list has more than one element, the energy is controlled by
             the multiplication of lambda_electrostatics_suffix1 * lambda_electrostatics_suffix2.
+        softcore : dict
+            A dictionary which contains softcore parameters as floats
         """
         if lambda_variable_suffixes[0] == '':
             lambda_variable_name = 'lambda_electrostatics'
@@ -1410,12 +1417,13 @@ class AbsoluteAlchemicalFactory(object):
                 lambda_variable_name = 'lambda_electrostatics{}'.format(lambda_variable_suffixes[0])
 
         # The final expression will be prefix + method + suffix.
-        electrostatics_prefix = ('U_electrostatics;'
-                                     'U_electrostatics=(({})^softcore_d)*ONE_4PI_EPS0*chargeprod').format(lambda_variable_name)
+        electrostatics_prefix = ('U_electrostatics;U_electrostatics=(({0})^{1})*ONE_4PI_EPS0*chargeprod')\
+            .format(lambda_variable_name, softcore['d'])
 
         # Effective softcore distance for electrostatics (common to all methods).
-        electrostatics_suffix = ('reff_electrostatics = sigma*((softcore_beta*(1.0-({0}))^softcore_e + (r/sigma)^softcore_f))^(1/softcore_f);'
-                                 'ONE_4PI_EPS0 = {1};').format(lambda_variable_name, ONE_4PI_EPS0)  # Already in OpenMM units.
+        electrostatics_suffix = ('reff_electrostatics = sigma*(({0}*(1.0-({1}))^{2} + (r/sigma)^{3}))^(1/{3});'
+                                 ' ONE_4PI_EPS0 = {4};').format(softcore['beta'], lambda_variable_name, softcore['e'],
+                                                                softcore['f'], ONE_4PI_EPS0)  # Already in OpenMM units.
 
         # Define mixing rules.
         electrostatics_mixing_rules = ('chargeprod = charge1*charge2;'  # Mixing rule for charges.
@@ -1697,8 +1705,14 @@ class AbsoluteAlchemicalFactory(object):
             # Determine energy expression for all custom forces
             # --------------------------------------------------
 
+            #Assumes softcore params the same between regions
+            softcore_dict = {'alpha': alchemical_regions_pairs[0].softcore_alpha, 'beta': alchemical_regions_pairs[0].softcore_beta,
+                             'a': alchemical_regions_pairs[0].softcore_a, 'b': alchemical_regions_pairs[0].softcore_b,
+                             'c': alchemical_regions_pairs[0].softcore_c, 'd': alchemical_regions_pairs[0].softcore_d,
+                             'e': alchemical_regions_pairs[0].softcore_e, 'f': alchemical_regions_pairs[0].softcore_f}
+
             # Get steric energy expressions.
-            sterics_mixing_rules, exceptions_sterics_energy_expression = self._get_sterics_energy_expressions(lambda_var_suffixes)
+            sterics_mixing_rules, exceptions_sterics_energy_expression = self._get_sterics_energy_expressions(lambda_var_suffixes, softcore_dict)
 
             # Define energy expression for sterics.
             sterics_energy_expression = exceptions_sterics_energy_expression + sterics_mixing_rules
@@ -1706,7 +1720,7 @@ class AbsoluteAlchemicalFactory(object):
             if not use_exact_pme_treatment:
                 # There's no CustomNonbondedForce that models electrostatics if we use exact
                 # PME treatment. Electrostatics is modeled through offset parameters.
-                energy_expressions = self._get_electrostatics_energy_expressions(reference_force, lambda_var_suffixes)
+                energy_expressions = self._get_electrostatics_energy_expressions(reference_force, lambda_var_suffixes, softcore_dict)
                 (electrostatics_energy_expression,
                  exceptions_electrostatics_energy_expression) = energy_expressions  # Unpack tuple.
 
@@ -1768,7 +1782,7 @@ class AbsoluteAlchemicalFactory(object):
                 na_sterics_custom_nonbonded_force = create_force(openmm.CustomNonbondedForce, sterics_energy_expression,
                                                                  'lambda_sterics', lambda_var_suffixes, is_lambda_controlled=True)
                 aa_sterics_custom_nonbonded_force = create_force(openmm.CustomNonbondedForce, sterics_energy_expression,
-                                                                 'lambda_sterics', lambda_var_suffixes, alchemical_region.annihilate_sterics)
+                                                                 'lambda_sterics', lambda_var_suffixes, alchemical_regions_pairs[0].annihilate_sterics)
                 all_sterics_custom_nonbonded_forces = [na_sterics_custom_nonbonded_force, aa_sterics_custom_nonbonded_force]
 
             # Add parameters and configure CustomNonbondedForces to match reference force.
@@ -1803,7 +1817,7 @@ class AbsoluteAlchemicalFactory(object):
                     na_electrostatics_custom_nonbonded_force = create_force(openmm.CustomNonbondedForce, electrostatics_energy_expression,
                                                                             'lambda_electrostatics', lambda_var_suffixes, is_lambda_controlled=True)
                     aa_electrostatics_custom_nonbonded_force = create_force(openmm.CustomNonbondedForce, electrostatics_energy_expression,
-                                                                            'lambda_electrostatics', lambda_var_suffixes,  alchemical_region.annihilate_electrostatics)
+                                                                            'lambda_electrostatics', lambda_var_suffixes,  alchemical_regions_pairs[0].annihilate_electrostatics)
                     all_electrostatics_custom_nonbonded_forces = [na_electrostatics_custom_nonbonded_force,
                                                                   aa_electrostatics_custom_nonbonded_force]
 
@@ -1837,7 +1851,7 @@ class AbsoluteAlchemicalFactory(object):
                 na_sterics_custom_bond_force = create_force(openmm.CustomBondForce, exceptions_sterics_energy_expression,
                                                             'lambda_sterics', lambda_var_suffixes, is_lambda_controlled=True)
                 aa_sterics_custom_bond_force = create_force(openmm.CustomBondForce, exceptions_sterics_energy_expression,
-                                                            'lambda_sterics', lambda_var_suffixes, alchemical_region.annihilate_sterics)
+                                                            'lambda_sterics', lambda_var_suffixes, alchemical_regions_pairs[0].annihilate_sterics)
                 all_sterics_custom_bond_forces = [na_sterics_custom_bond_force, aa_sterics_custom_bond_force]
 
             for force in all_sterics_custom_bond_forces:
@@ -1859,7 +1873,7 @@ class AbsoluteAlchemicalFactory(object):
                     na_electrostatics_custom_bond_force = create_force(openmm.CustomBondForce, exceptions_electrostatics_energy_expression,
                                                                        'lambda_electrostatics', lambda_var_suffixes, is_lambda_controlled=True)
                     aa_electrostatics_custom_bond_force = create_force(openmm.CustomBondForce, exceptions_electrostatics_energy_expression,
-                                                                       'lambda_electrostatics', lambda_var_suffixes, alchemical_region.annihilate_electrostatics)
+                                                                       'lambda_electrostatics', lambda_var_suffixes, alchemical_regions_pairs[0].annihilate_electrostatics)
                     all_electrostatics_custom_bond_forces = [na_electrostatics_custom_bond_force, aa_electrostatics_custom_bond_force]
 
             # Create CustomBondForce to handle exceptions for electrostatics
@@ -1998,23 +2012,6 @@ class AbsoluteAlchemicalFactory(object):
                 if at_least_one_alchemical:
                     nonbonded_force.setExceptionParameters(exception_index, iatom, jatom,
                                                            abs(0.0*chargeprod), sigma, abs(0.0*epsilon))
-
-            # Add global parameters to forces.
-            def add_global_parameters(force):
-                force.addGlobalParameter('softcore_alpha', alchemical_region.softcore_alpha)
-                force.addGlobalParameter('softcore_beta', alchemical_region.softcore_beta)
-                force.addGlobalParameter('softcore_a', alchemical_region.softcore_a)
-                force.addGlobalParameter('softcore_b', alchemical_region.softcore_b)
-                force.addGlobalParameter('softcore_c', alchemical_region.softcore_c)
-                force.addGlobalParameter('softcore_d', alchemical_region.softcore_d)
-                force.addGlobalParameter('softcore_e', alchemical_region.softcore_e)
-                force.addGlobalParameter('softcore_f', alchemical_region.softcore_f)
-
-            all_custom_forces = (all_custom_nonbonded_forces +
-                                 all_sterics_custom_bond_forces +
-                                 all_electrostatics_custom_bond_forces)
-            for force in all_custom_forces:
-                add_global_parameters(force)
 
             # With exact treatment of PME electrostatics, the NonbondedForce
             # is affected by lambda electrostatics as well.
