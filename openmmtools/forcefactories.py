@@ -17,7 +17,10 @@ Factories to manipulate OpenMM System forces.
 import copy
 
 import numpy as np
-import mdtraj
+try:
+    import mdtraj
+except ImportError:
+    print('MDtraj missing in forcefactory.py')
 from simtk import openmm, unit
 
 from openmmtools import forces

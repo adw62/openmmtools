@@ -210,7 +210,8 @@ class AlchemicalState(states.GlobalParameterState):
             if parameter_value is None:
                 return parameter_value
             if not (0.0 <= parameter_value <= 1.0):
-                raise ValueError('{} must be between 0 and 1.'.format(self.parameter_name))
+                pass
+                #raise ValueError('{} must be between 0 and 1.'.format(self.parameter_name))
             return float(parameter_value)
 
     lambda_sterics = _LambdaParameter('lambda_sterics')
