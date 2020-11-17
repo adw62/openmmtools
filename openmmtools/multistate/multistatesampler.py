@@ -40,7 +40,10 @@ import numpy as np
 from simtk import unit, openmm
 
 from openmmtools import multistate, utils, states, mcmc, cache
-import mpiplus
+try:
+    import mpiplus
+except ImportError:
+    print('Missing mpiplus in multistatesampler.py')
 from openmmtools.multistate.utils import SimulationNaNError
 
 from pymbar.utils import ParameterError
@@ -980,7 +983,7 @@ class MultiStateSampler(object):
             logger.critical(err_msg)
             raise SimulationNaNError(err_msg)
 
-    @mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
+    #@mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
     def _display_citations(self, overwrite_global=False, citation_stack=None):
         """
         Display papers to be cited.
@@ -1066,7 +1069,7 @@ class MultiStateSampler(object):
                                     'cannot read status.'.format(reporter.filepath))
         return reporter
 
-    @mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=True)
+    #@mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=True)
     def _initialize_reporter(self):
         """Initialize the reporter and store initial information.
 
@@ -1086,8 +1089,8 @@ class MultiStateSampler(object):
         # Store initial conditions. This forces the storage to be synchronized.
         self._report_iteration()
 
-    @mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
-    @mpiplus.delayed_termination
+    #@mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
+    #@mpiplus.delayed_termination
     @utils.with_timer('Writing iteration information to storage')
     def _report_iteration(self):
         """Store positions, states, and energies of current iteration.
@@ -1106,8 +1109,8 @@ class MultiStateSampler(object):
         self._reporter.write_timestamp(self._iteration)
         self._reporter.write_last_iteration(self._iteration)
 
-    @mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
-    @mpiplus.delayed_termination
+    #@mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
+    #@mpiplus.delayed_termination
     def _report_iteration_items(self):
         """
         Sub-function of :func:`_report_iteration` which handles all the actual individual item reporting in a
@@ -1367,7 +1370,7 @@ class MultiStateSampler(object):
     # Internal-usage: Replicas mixing.
     # -------------------------------------------------------------------------
 
-    @mpiplus.on_single_node(0, broadcast_result=True)
+    #@mpiplus.on_single_node(0, broadcast_result=True)
     def _mix_replicas(self):
         """Do nothing to replicas."""
         logger.debug("Mixing replicas (does nothing for MultiStateSampler)...")
@@ -1389,8 +1392,8 @@ class MultiStateSampler(object):
     # Internal-usage: Offline and online analysis
     # -------------------------------------------------------------------------
 
-    @mpiplus.on_single_node(rank=0, broadcast_result=True)
-    @mpiplus.delayed_termination
+    #@mpiplus.on_single_node(rank=0, broadcast_result=True)
+    #@mpiplus.delayed_termination
     @utils.with_timer('Computing offline free energy estimate')
     def _offline_analysis(self):
         """Compute offline estimate of free energies
@@ -1467,8 +1470,8 @@ class MultiStateSampler(object):
 
         return self._last_err_free_energy
 
-    @mpiplus.on_single_node(rank=0, broadcast_result=True)
-    @mpiplus.delayed_termination
+    #@mpiplus.on_single_node(rank=0, broadcast_result=True)
+    #@mpiplus.delayed_termination
     @utils.with_timer('Computing online free energy estimate')
     def _online_analysis(self, gamma0=1.0):
         """Perform online analysis of free energies

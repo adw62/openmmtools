@@ -27,7 +27,10 @@ import logging
 import re
 from typing import Optional, NamedTuple, Union
 
-import mdtraj
+try:
+    import mdtraj
+except ImportError:
+    print('MDtraj missing in multistateanalyzer.py')
 import numpy as np
 from simtk import openmm
 import simtk.unit as units

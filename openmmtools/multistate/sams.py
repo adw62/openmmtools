@@ -30,7 +30,10 @@ from scipy.special import logsumexp
 
 from openmmtools import multistate, utils
 from openmmtools.multistate.multistateanalyzer import MultiStateSamplerAnalyzer
-import mpiplus
+try:
+    import mpiplus
+except ImportError:
+    print('Missing mpiplus in sams.py')
 
 
 logger = logging.getLogger(__name__)
@@ -378,8 +381,8 @@ class SAMSSampler(multistate.MultiStateSampler):
         # Determine t0
         self._update_stage()
 
-    @mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
-    @mpiplus.delayed_termination
+    #@mpiplus.on_single_node(rank=0, broadcast_result=False, sync_nodes=False)
+    #@mpiplus.delayed_termination
     def _report_iteration_items(self):
         super(SAMSSampler, self)._report_iteration_items()
 
@@ -392,7 +395,7 @@ class SAMSSampler(multistate.MultiStateSampler):
             self._cached_state_histogram = np.zeros(self.n_states, dtype=int)
         self._cached_state_histogram[states] += counts
 
-    @mpiplus.on_single_node(0, broadcast_result=True)
+    #@mpiplus.on_single_node(0, broadcast_result=True)
     def _mix_replicas(self):
         """Update thermodynamic states according to user-specified scheme."""
         logger.debug("Updating thermodynamic states using %s scheme..." % self.state_update_scheme)
